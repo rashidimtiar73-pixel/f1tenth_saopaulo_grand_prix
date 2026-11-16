@@ -4,6 +4,8 @@ ROS 2 Dynamic Apex & Kinematic Braking Reactive Controller Node
 Designed for F1Tenth Autonomous Racing - Sao Paulo (Interlagos) Track
 Group 5 Competition - Tongmyong University
 
+Author: Prantor Imtiar Rashid (rashidimtiar73-pixel)
+
 Features:
 - UNC Chapel Hill Disparity Extender with Dynamic Safety Expansion
 - Obstacle Safety Bubble Inflation
@@ -11,7 +13,9 @@ Features:
 - Lateral Tail-Strike & Barrier Protection Guard
 - Kinematic Threshold Lookahead Braking Curve
 - Real-Time Lap Counter & Microsecond Lap Timer
-- RViz 3D Text Marker HUD Publisher (/lap_hud_marker)
+- Odometry Euclidean Lap Distance Tracker
+- 3D RViz Visualization: Floating HUD (/ftg_hud_marker), Gap Target Marker (/ftg_target_marker),
+  Continuous Trajectory (/ftg_trajectory_marker), and Native Path (/ftg_path)
 - CSV Telemetry Logging
 """
 
@@ -19,8 +23,10 @@ import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import LaserScan
 from ackermann_msgs.msg import AckermannDriveStamped
-from nav_msgs.msg import Odometry
+from nav_msgs.msg import Odometry, Path
+from geometry_msgs.msg import PoseStamped, Point
 from visualization_msgs.msg import Marker
+from std_msgs.msg import ColorRGBA
 import numpy as np
 import time
 import os
@@ -60,15 +66,37 @@ class DynamicApexGapNode(Node):
         self.csv_path = self.get_parameter('csv_log_path').value
 
         self.prev_steer = 0.0
+        self.last_pose = None
+        self.lap_distance = 0.0
+        self.total_distance = 0.0
+        self.current_speed = 0.0
 
         # ROS 2 Publishers & Subscribers
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, '/ego_racecar/odom', self.odom_callback, 10)
+        
+        # Actuation & Visual Telemetry Topics
         self.drive_pub = self.create_publisher(AckermannDriveStamped, '/drive', 10)
-        self.marker_pub = self.create_publisher(Marker, '/lap_hud_marker', 10)
+        self.marker_pub = self.create_publisher(Marker, '/ftg_hud_marker', 10)
+        self.legacy_hud_pub = self.create_publisher(Marker, '/lap_hud_marker', 10)
+        self.target_marker_pub = self.create_publisher(Marker, '/ftg_target_marker', 10)
+        self.traj_marker_pub = self.create_publisher(Marker, '/ftg_trajectory_marker', 10)
+        self.path_pub = self.create_publisher(Path, '/ftg_path', 10)
+
+        # RViz Path & Trajectory message structures
+        self.path_msg = Path()
+        self.path_msg.header.frame_id = 'map'
+        self.traj_marker = Marker()
+        self.traj_marker.header.frame_id = 'map'
+        self.traj_marker.ns = 'ftg_trajectory'
+        self.traj_marker.id = 0
+        self.traj_marker.type = Marker.LINE_STRIP
+        self.traj_marker.action = Marker.ADD
+        self.traj_marker.scale.x = 0.08  # Line width
+        self.traj_marker.color = ColorRGBA(r=1.0, g=0.55, b=0.0, a=0.9)  # Orange
 
         # Lap Counter & Timer State
-        self.start_pose = np.array([0.0, 0.0])
+        self.start_pose = None
         self.lap_count = 0
         self.lap_times = []
         self.lap_start_time = None
@@ -84,7 +112,7 @@ class DynamicApexGapNode(Node):
                 writer.writerow(['Lap', 'Lap_Time_Seconds', 'Best_Lap_Time_Seconds', 'Timestamp'])
 
         self.get_logger().info(
-            f"🏆 DynamicApexGapNode Active! Target: Sao Paulo (Group 5) | Max Speed: {self.max_speed} m/s"
+            f"🏆 DynamicApexGapNode Active! Author: Prantor Imtiar Rashid | Target: Sao Paulo (Group 5)"
         )
 
     def odom_callback(self, msg: Odometry):
@@ -93,8 +121,34 @@ class DynamicApexGapNode(Node):
         curr_pos = np.array([curr_x, curr_y])
         curr_time = self.get_clock().now().nanoseconds / 1e9
 
+        if self.start_pose is None:
+            self.start_pose = curr_pos
+            self.last_pose = curr_pos
+
         if self.lap_start_time is None:
             self.lap_start_time = curr_time
+
+        # Distance Integration
+        delta_d = np.linalg.norm(curr_pos - self.last_pose)
+        if delta_d > 0.0:
+            self.lap_distance += delta_d
+            self.total_distance += delta_d
+            self.last_pose = curr_pos
+
+            # Append to RViz trajectory every 0.25m
+            if delta_d > 0.20 or len(self.traj_marker.points) == 0:
+                p = Point(x=curr_x, y=curr_y, z=0.05)
+                self.traj_marker.points.append(p)
+                self.traj_marker.header.stamp = msg.header.stamp
+                self.traj_marker_pub.publish(self.traj_marker)
+
+                # Append to Path
+                pose_stamped = PoseStamped()
+                pose_stamped.header = msg.header
+                pose_stamped.pose = msg.pose.pose
+                self.path_msg.poses.append(pose_stamped)
+                self.path_msg.header.stamp = msg.header.stamp
+                self.path_pub.publish(self.path_msg)
 
         dist_to_start = np.linalg.norm(curr_pos - self.start_pose)
 
@@ -108,76 +162,100 @@ class DynamicApexGapNode(Node):
             if lap_duration > 10.0:  # debounce filter
                 self.lap_count += 1
                 self.lap_times.append(lap_duration)
-                self.lap_start_time = curr_time
-                self.has_left_start = False
-                best_lap = min(self.lap_times)
+                best_time = min(self.lap_times)
 
                 self.get_logger().info(
                     f"🏁 LAP {self.lap_count}/{self.total_laps_target} COMPLETED! "
-                    f"Time: {lap_duration:.3f} s | Fastest: {best_lap:.3f} s"
+                    f"Time: {lap_duration:.4f}s | Best: {best_time:.4f}s | Dist: {self.lap_distance:.1f}m"
                 )
 
-                # Append to CSV
+                # Log to CSV
                 with open(self.csv_path, 'a', newline='') as f:
                     writer = csv.writer(f)
-                    writer.writerow([self.lap_count, f"{lap_duration:.4f}", f"{best_lap:.4f}", time.strftime('%Y-%m-%d %H:%M:%S')])
+                    writer.writerow([self.lap_count, f"{lap_duration:.4f}", f"{best_time:.4f}", time.time()])
 
-        # Publish 3D HUD marker for RViz
-        self.publish_hud(curr_time, curr_x, curr_y)
+                self.lap_start_time = curr_time
+                self.has_left_start = False
+                self.lap_distance = 0.0
 
-    def publish_hud(self, curr_time, x, y):
+        # Publish 3D Floating HUD Marker
+        self.publish_hud_marker(msg, curr_time)
+
+    def publish_hud_marker(self, odom_msg: Odometry, curr_time: float):
+        curr_lap_time = (curr_time - self.lap_start_time) if self.lap_start_time else 0.0
+        best_time_str = f"{min(self.lap_times):.3f}s" if self.lap_times else "--.---s"
+
         marker = Marker()
-        marker.header.frame_id = "map"
+        marker.header.frame_id = "ego_racecar/base_link"
         marker.header.stamp = self.get_clock().now().to_msg()
-        marker.ns = "lap_hud"
+        marker.ns = "ftg_hud"
         marker.id = 0
         marker.type = Marker.TEXT_VIEW_FACING
         marker.action = Marker.ADD
-        marker.pose.position.x = x
-        marker.pose.position.y = y
-        marker.pose.position.z = 1.2
-        marker.scale.z = 0.55
-
-        elapsed = curr_time - self.lap_start_time if self.lap_start_time else 0.0
-        best_str = f"{min(self.lap_times):.2f}s" if self.lap_times else "--.--"
-
+        marker.pose.position.x = 0.0
+        marker.pose.position.y = 0.0
+        marker.pose.position.z = 1.35
+        marker.pose.orientation.w = 1.0
+        marker.scale.z = 0.38
+        marker.color = ColorRGBA(r=0.0, g=1.0, b=0.4, a=1.0)
         marker.text = (
-            f"SAO PAULO GRAND PRIX\n"
-            f"LAP: {self.lap_count}/{self.total_laps_target}\n"
-            f"CURRENT: {elapsed:05.2f}s\n"
-            f"FASTEST: {best_str}"
+            f"🏎️ SAO PAULO GRAND PRIX\n"
+            f"LAP: {self.lap_count + 1} / {self.total_laps_target}\n"
+            f"TIME: {curr_lap_time:.2f}s | BEST: {best_time_str}\n"
+            f"SPEED: {self.current_speed * 3.6:.1f} km/h | DIST: {self.lap_distance:.1f} m"
         )
-
-        marker.color.r = 0.0
-        marker.color.g = 1.0
-        marker.color.b = 0.3
-        marker.color.a = 1.0
         self.marker_pub.publish(marker)
+        self.legacy_hud_pub.publish(marker)
+
+    def publish_target_marker(self, target_angle: float, target_dist: float):
+        marker = Marker()
+        marker.header.frame_id = "ego_racecar/base_link"
+        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.ns = "ftg_target"
+        marker.id = 1
+        marker.type = Marker.SPHERE
+        marker.action = Marker.ADD
+        marker.pose.position.x = float(target_dist * np.cos(target_angle))
+        marker.pose.position.y = float(target_dist * np.sin(target_angle))
+        marker.pose.position.z = 0.1
+        marker.pose.orientation.w = 1.0
+        marker.scale.x = 0.25
+        marker.scale.y = 0.25
+        marker.scale.z = 0.25
+        marker.color = ColorRGBA(r=0.0, g=1.0, b=0.1, a=0.9)
+        self.target_marker_pub.publish(marker)
 
     def scan_callback(self, scan_msg: LaserScan):
         ranges = np.array(scan_msg.ranges)
         num_beams = len(ranges)
-        scan_angles = np.linspace(scan_msg.angle_min, scan_msg.angle_max, num_beams)
+        angle_min = scan_msg.angle_min
         angle_inc = scan_msg.angle_increment
+        scan_angles = angle_min + np.arange(num_beams) * angle_inc
 
-        # 1. FOV Windowing (Focus on forward driving cone)
-        fov_mask = (scan_angles >= -self.fov_rad / 2.0) & (scan_angles <= self.fov_rad / 2.0)
-        fov_indices = np.where(fov_mask)[0]
-        sub_scan = np.clip(ranges[fov_indices], 0.0, 10.0)
-        sub_angles = scan_angles[fov_indices]
-        n_sub = len(sub_scan)
+        # 1. FOV Cropping to Forward Cone
+        fov_mask = np.abs(scan_angles) <= (self.fov_rad / 2.0)
+        sub_ranges = ranges[fov_mask]
+        sub_angles = scan_angles[fov_mask]
+        n_sub = len(sub_ranges)
 
-        # 2. Moving Average Filter (Remove sensor noise)
+        if n_sub == 0:
+            return
+
+        # Clean NaN and clamp infinity
+        sub_ranges = np.nan_to_num(sub_ranges, nan=0.0, posinf=15.0, neginf=0.0)
+
+        # 2. Moving Average Filter (5-point kernel)
         kernel = np.ones(5) / 5.0
-        smoothed = np.convolve(sub_scan, kernel, mode='same')
-        proc_scan = np.copy(smoothed)
+        smoothed = np.convolve(sub_ranges, kernel, mode='same')
 
-        # 3. UNC Chapel Hill Disparity Extender
+        proc_scan = smoothed.copy()
+
+        # 3. Disparity Extender Algorithm (UNC Chapel Hill formulation)
         for i in range(n_sub - 1):
-            diff = proc_scan[i + 1] - proc_scan[i]
+            diff = proc_scan[i] - proc_scan[i + 1]
             if abs(diff) > self.disparity_threshold:
                 if diff > 0:
-                    d_closer = proc_scan[i]
+                    d_closer = proc_scan[i + 1]
                     if d_closer > 0.05:
                         extend_angle = np.arctan(self.car_width_half / d_closer)
                         n_extend = int(np.ceil(extend_angle / angle_inc))
@@ -185,7 +263,7 @@ class DynamicApexGapNode(Node):
                             proc_scan[i + 1:min(n_sub, i + 1 + n_extend)], d_closer
                         )
                 else:
-                    d_closer = proc_scan[i + 1]
+                    d_closer = proc_scan[i]
                     if d_closer > 0.05:
                         extend_angle = np.arctan(self.car_width_half / d_closer)
                         n_extend = int(np.ceil(extend_angle / angle_inc))
@@ -203,12 +281,13 @@ class DynamicApexGapNode(Node):
             b_end = min(n_sub, closest_idx + n_bubble + 1)
             proc_scan[b_start:b_end] = 0.0
 
-        # 5. Find Max Free Gap
+        # 5. Adaptive Threshold Max Gap Detection
+        adaptive_thresh = max(self.gap_dist_thresh, 0.38 * np.max(proc_scan))
         gaps = []
         in_gap = False
         gap_start = 0
         for i in range(n_sub):
-            if proc_scan[i] >= self.gap_dist_thresh:
+            if proc_scan[i] >= adaptive_thresh:
                 if not in_gap:
                     in_gap = True
                     gap_start = i
@@ -230,6 +309,8 @@ class DynamicApexGapNode(Node):
             best_idx = np.clip(best_idx, 0, n_sub - 1)
 
         raw_steer = sub_angles[best_idx]
+        target_dist = min(3.5, float(sub_ranges[best_idx]))
+        self.publish_target_marker(raw_steer, target_dist)
 
         # 6. Lateral Tail Guard (Prevent tail-strike during sharp turning)
         lat_left = scan_angles > np.radians(65)
@@ -250,9 +331,9 @@ class DynamicApexGapNode(Node):
 
         # 7. Kinematic Threshold Lookahead Braking Curve
         abs_steer = abs(steer)
-        target_dist = sub_scan[best_idx]
+        target_dist = sub_ranges[best_idx]
         fwd_mask = np.abs(sub_angles) < np.radians(14.0)
-        fwd_dist = np.mean(sub_scan[fwd_mask]) if np.any(fwd_mask) else 3.0
+        fwd_dist = np.mean(sub_ranges[fwd_mask]) if np.any(fwd_mask) else 3.0
         effective_clearance = min(fwd_dist, target_dist)
 
         # Curvature-based Speed Profile
@@ -275,6 +356,7 @@ class DynamicApexGapNode(Node):
             v_brake = np.sqrt(self.min_speed**2 + 2.0 * self.a_brake * (effective_clearance - self.d_margin))
 
         speed = max(self.min_speed, min(self.max_speed, min(v_curv, v_brake)))
+        self.current_speed = speed
 
         # Publish Drive Command
         drive_msg = AckermannDriveStamped()
