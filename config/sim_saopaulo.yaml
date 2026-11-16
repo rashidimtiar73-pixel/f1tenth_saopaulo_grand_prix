@@ -1,0 +1,18 @@
+# F1Tenth Simulator Configuration for Sao Paulo Track (Group 5)
+bridge:
+  ros__parameters:
+    num_agent: 1
+    map_path: "/home/user/F1Tenth-Repository/src/f1tenth_gym_ros/maps/SaoPaulo_map"
+    map_img_ext: ".png"
+    scan_topic: "/scan"
+    drive_topic: "/drive"
+    ego_pose_topic: "/ego_racecar/odom"
+    scan_distance_to_base_link: 0.0
+    scan_fov: 4.7
+    scan_beams: 1080
+    map_free_threshold: 0.8
+    wheelbase: 0.3302
+    width: 0.2032
+    sx: 0.0
+    sy: 0.0
+    stheta: -1.313

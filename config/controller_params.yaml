@@ -1,0 +1,15 @@
+# Controller Parameters for F1Tenth Sao Paulo Grand Prix
+dynamic_apex_gap_node:
+  ros__parameters:
+    max_speed: 8.8                # Maximum straightaway speed (m/s) -> 31.68 km/h
+    min_speed: 2.35               # Minimum cornering apex speed (m/s)
+    a_brake: 5.8                  # Kinematic threshold deceleration capability (m/s^2)
+    d_margin: 1.85                # Safe stopping margin from obstacle edge (m)
+    fov_degrees: 135.0            # Forward sensor field of view (degrees)
+    bubble_radius: 0.45           # Safety bubble inflation radius (m)
+    car_width_half: 0.31          # Half car width + virtual aerodynamic safety buffer (m)
+    disparity_threshold: 0.38     # Depth jump to trigger disparity extension (m)
+    gap_distance_threshold: 1.15  # Minimum depth to consider as navigable free space (m)
+    alpha_blend: 0.65             # Weight of gap center (0.65) vs deepest point (0.35)
+    steer_rate_limit: 0.15        # Maximum steering slew rate per control step (rad)
+    csv_log_path: "champion_lap_times.csv"
