@@ -3,7 +3,7 @@
 **Institution:** Tongmyong University (TU)  
 **Instructor:** Prof. Nabih Pico, Ph.D.  
 **Track Assigned:** Sao Paulo (Interlagos Circuit) — **Group 5**  
-**Author:** yeti-7 (bishalsth43@gmail.com)  
+**Author:** Franthol Imtar Rashid (rashidimtiar73-pixel)  
 **Competition Result:** 🏆 **1st Place Podium Tier** | Fastest Lap: **87.720 s** | 10/10 Clean Laps (0 Collisions)
 
 [![ROS 2](https://img.shields.io/badge/ROS%202-Humble-brightgreen)](https://docs.ros.org/en/humble/)
@@ -176,7 +176,7 @@ f1tenth_saopaulo_grand_prix/
 cd ~/f1tenth_ws/src
 
 # Clone this repository
-git clone https://github.com/yeti-7/f1tenth_saopaulo_grand_prix.git
+git clone https://github.com/rashidimtiar73-pixel/f1tenth_saopaulo_grand_prix.git
 
 # Build with symlink install
 cd ~/f1tenth_ws

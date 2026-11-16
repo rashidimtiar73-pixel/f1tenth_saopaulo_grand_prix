@@ -4,7 +4,7 @@
   <name>f1tenth_saopaulo_grand_prix</name>
   <version>2.0.0</version>
   <description>F1Tenth Reactive Autonomous Racing Package for Sao Paulo Track (Tongmyong University)</description>
-  <maintainer email="bishalsth43@gmail.com">yeti-7</maintainer>
+  <maintainer email="bishalsth43@gmail.com">rashidimtiar73-pixel</maintainer>
   <license>MIT</license>
 
   <depend>rclpy</depend>

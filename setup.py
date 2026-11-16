@@ -17,7 +17,7 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='yeti-7',
+    maintainer='rashidimtiar73-pixel',
     maintainer_email='bishalsth43@gmail.com',
     description='F1Tenth Reactive Autonomous Racing Package for Sao Paulo Track',
     license='MIT',
