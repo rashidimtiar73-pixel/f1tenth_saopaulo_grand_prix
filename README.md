@@ -3,7 +3,7 @@
 **Institution:** Tongmyong University (TU)  
 **Instructor:** Prof. Nabih Pico, Ph.D.  
 **Track Assigned:** Sao Paulo (Interlagos Circuit) — **Group 5**  
-**Author:** Franthol Imtar Rashid (rashidimtiar73-pixel)  
+**Author:** Prantor Imtiar Rashid (rashidimtiar73-pixel)  
 **Competition Result:** 🏆 **1st Place Podium Tier** | Fastest Lap: **87.720 s** | 10/10 Clean Laps (0 Collisions)
 
 [![ROS 2](https://img.shields.io/badge/ROS%202-Humble-brightgreen)](https://docs.ros.org/en/humble/)
